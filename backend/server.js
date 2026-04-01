@@ -2,6 +2,10 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const fs = require('fs/promises');
+const path = require('path');
+const pool = require('./config/database');
+const { ensureWorkflowSchema } = require('./utils/workflow');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -13,6 +17,15 @@ const reportRoutes = require('./routes/reports');
 const applicationRoutes = require('./routes/application');
 
 const app = express();
+
+const initializeDatabase = async () => {
+  const schemaPath = path.join(__dirname, '..', 'db', 'schema.sql');
+  const schemaSql = await fs.readFile(schemaPath, 'utf8');
+
+  // Run base schema statements first so workflow migrations have required tables.
+  await pool.query(schemaSql);
+  await ensureWorkflowSchema();
+};
 
 // Middleware
 app.use(cors({ origin: process.env.CORS_ORIGIN }));
@@ -45,7 +58,14 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Environment: ${process.env.NODE_ENV}`);
-});
+initializeDatabase()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+      console.log(`Environment: ${process.env.NODE_ENV}`);
+    });
+  })
+  .catch((error) => {
+    console.error('Database initialization failed:', error.message);
+    process.exit(1);
+  });
