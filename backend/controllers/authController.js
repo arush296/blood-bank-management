@@ -4,10 +4,12 @@ const pool = require('../config/database');
 
 const register = async (req, res) => {
   const client = await pool.connect();
+  let transactionActive = false;
   try {
     const { username, password, role, name, age, blood_group, phone, email, city, blood_group_needed, hospital, contact, urgency_level } = req.body;
 
     await client.query('BEGIN');
+    transactionActive = true;
 
     // Check if user already exists
     const userExists = await client.query('SELECT * FROM "user" WHERE username = $1', [username]);
@@ -41,12 +43,14 @@ const register = async (req, res) => {
     }
 
     await client.query('COMMIT');
+    transactionActive = false;
 
     // Generate token
+    const jwtExpiry = process.env.JWT_EXPIRY || '7d';
     const token = jwt.sign(
       { user_id: userId, username, role },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRY }
+      { expiresIn: jwtExpiry }
     );
 
     res.status(201).json({
@@ -55,7 +59,13 @@ const register = async (req, res) => {
       user: { user_id: userId, username, role }
     });
   } catch (error) {
-    await client.query('ROLLBACK');
+    if (transactionActive) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackError) {
+        console.error('Rollback failed:', rollbackError.message);
+      }
+    }
     console.error(error);
 
     if (error.code === '23505') {
@@ -100,10 +110,11 @@ const login = async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    const jwtExpiry = process.env.JWT_EXPIRY || '7d';
     const token = jwt.sign(
       { user_id: user.user_id, username: user.username, role: user.role },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRY }
+      { expiresIn: jwtExpiry }
     );
 
     res.json({
