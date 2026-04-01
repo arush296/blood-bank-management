@@ -2,9 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const fs = require('fs/promises');
-const path = require('path');
-const pool = require('./config/database');
+const { ensureBaseSchema } = require('./utils/baseSchema');
 const { ensureWorkflowSchema } = require('./utils/workflow');
 
 // Import routes
@@ -19,16 +17,8 @@ const applicationRoutes = require('./routes/application');
 const app = express();
 
 const initializeDatabase = async () => {
-  const bundledSchemaPath = path.join(__dirname, 'db', 'schema.sql');
-  const repoSchemaPath = path.join(__dirname, '..', 'db', 'schema.sql');
-  const schemaPath = await fs
-    .access(bundledSchemaPath)
-    .then(() => bundledSchemaPath)
-    .catch(() => repoSchemaPath);
-  const schemaSql = await fs.readFile(schemaPath, 'utf8');
-
-  // Base schema is idempotent and can safely repair partially initialized databases.
-  await pool.query(schemaSql);
+  // Base schema is created using explicit idempotent SQL statements.
+  await ensureBaseSchema();
 
   // Workflow migration is safe to run repeatedly.
   await ensureWorkflowSchema();
@@ -73,6 +63,6 @@ initializeDatabase()
     });
   })
   .catch((error) => {
-    console.error('Database initialization failed:', error.message);
+    console.error('Database initialization failed:', error);
     process.exit(1);
   });
