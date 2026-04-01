@@ -23,7 +23,12 @@ const initializeDatabase = async () => {
   const hasUserTable = !!tableCheck.rows?.[0]?.table_name;
 
   if (!hasUserTable) {
-    const schemaPath = path.join(__dirname, '..', 'db', 'schema.sql');
+    const bundledSchemaPath = path.join(__dirname, 'db', 'schema.sql');
+    const repoSchemaPath = path.join(__dirname, '..', 'db', 'schema.sql');
+    const schemaPath = await fs
+      .access(bundledSchemaPath)
+      .then(() => bundledSchemaPath)
+      .catch(() => repoSchemaPath);
     const schemaSql = await fs.readFile(schemaPath, 'utf8');
 
     // Only run full schema on empty databases.
