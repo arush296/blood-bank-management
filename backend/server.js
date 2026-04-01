@@ -19,11 +19,18 @@ const applicationRoutes = require('./routes/application');
 const app = express();
 
 const initializeDatabase = async () => {
-  const schemaPath = path.join(__dirname, '..', 'db', 'schema.sql');
-  const schemaSql = await fs.readFile(schemaPath, 'utf8');
+  const tableCheck = await pool.query("SELECT to_regclass('public.user') AS table_name");
+  const hasUserTable = !!tableCheck.rows?.[0]?.table_name;
 
-  // Run base schema statements first so workflow migrations have required tables.
-  await pool.query(schemaSql);
+  if (!hasUserTable) {
+    const schemaPath = path.join(__dirname, '..', 'db', 'schema.sql');
+    const schemaSql = await fs.readFile(schemaPath, 'utf8');
+
+    // Only run full schema on empty databases.
+    await pool.query(schemaSql);
+  }
+
+  // Workflow migration is safe to run repeatedly.
   await ensureWorkflowSchema();
 };
 
