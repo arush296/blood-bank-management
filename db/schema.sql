@@ -76,15 +76,15 @@ CREATE TABLE IF NOT EXISTS blood_issue (
 );
 
 -- Create Indexes for Performance
-CREATE INDEX idx_donor_blood_group ON donor(blood_group);
-CREATE INDEX idx_donor_city ON donor(city);
-CREATE INDEX idx_recipient_blood_group ON recipient(blood_group_needed);
-CREATE INDEX idx_blood_request_status ON blood_request(status);
-CREATE INDEX idx_blood_request_recipient ON blood_request(recipient_id);
-CREATE INDEX idx_blood_request_urgency ON blood_request(urgency_flag);
-CREATE INDEX idx_blood_stock_blood_group ON blood_stock(blood_group);
-CREATE INDEX idx_blood_stock_expiry ON blood_stock(expiry_date);
-CREATE INDEX idx_approval_request ON approval(blood_request_id);
-CREATE INDEX idx_approval_status ON approval(status);
-CREATE INDEX idx_blood_issue_request ON blood_issue(blood_request_id);
-CREATE INDEX idx_blood_issue_stock ON blood_issue(stock_id);
+CREATE INDEX IF NOT EXISTS idx_donor_blood_group ON donor(blood_group);
+CREATE INDEX IF NOT EXISTS idx_donor_city ON donor(city);
+CREATE INDEX IF NOT EXISTS idx_recipient_blood_group ON recipient(blood_group_needed);
+CREATE INDEX IF NOT EXISTS idx_blood_request_status ON blood_request(status);
+CREATE INDEX IF NOT EXISTS idx_blood_request_recipient ON blood_request(recipient_id);
+CREATE INDEX IF NOT EXISTS idx_blood_request_urgency ON blood_request(urgency_flag);
+CREATE INDEX IF NOT EXISTS idx_blood_stock_blood_group ON blood_stock(blood_group);
+CREATE INDEX IF NOT EXISTS idx_blood_stock_expiry ON blood_stock(expiry_date);
+CREATE INDEX IF NOT EXISTS idx_approval_request ON approval(blood_request_id);
+CREATE INDEX IF NOT EXISTS idx_approval_status ON approval(status);
+CREATE INDEX IF NOT EXISTS idx_blood_issue_request ON blood_issue(blood_request_id);
+CREATE INDEX IF NOT EXISTS idx_blood_issue_stock ON blood_issue(stock_id);
