@@ -16,6 +16,11 @@ const applicationRoutes = require('./routes/application');
 
 const app = express();
 
+const allowedOrigins = (process.env.CORS_ORIGIN || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 const initializeDatabase = async () => {
   // Base schema is created using explicit idempotent SQL statements.
   await ensureBaseSchema();
@@ -25,7 +30,19 @@ const initializeDatabase = async () => {
 };
 
 // Middleware
-app.use(cors({ origin: process.env.CORS_ORIGIN }));
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+      return callback(null, true);
+    }
+
+    return callback(new Error('Not allowed by CORS'));
+  }
+}));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 

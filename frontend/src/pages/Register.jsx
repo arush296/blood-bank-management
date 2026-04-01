@@ -88,7 +88,7 @@ const Register = () => {
     } catch (err) {
       const apiError = err.response?.data;
       const validationMessage = apiError?.errors?.[0]?.msg;
-      setError(validationMessage || apiError?.error || 'Registration failed');
+      setError(validationMessage || apiError?.error || err.message || 'Registration failed');
     } finally {
       setLoading(false);
     }
