@@ -307,7 +307,7 @@ This implementation covers all 6 module responsibilities:
 
 ## License
 
-For BITS DBMS Course - 2024-2025
+For BITS DBMS Course - 2025-26
 
 ---
 
