@@ -6,12 +6,14 @@ import Register from './pages/Register';
 import DonorDashboard from './pages/DonorDashboard';
 import RecipientDashboard from './pages/RecipientDashboard';
 import AdminDashboard from './pages/AdminDashboard';
+import FaqBot from './components/FaqBot';
 import './App.css';
 
 function App() {
   return (
     <AuthProvider>
       <Router>
+        <FaqBot />
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />

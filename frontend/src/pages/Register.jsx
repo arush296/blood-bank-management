@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authAPI } from '../api/apiService';
 import { useAuth } from '../context/AuthContext';
@@ -6,7 +6,7 @@ import '../styles/Auth.css';
 
 const Register = () => {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, clearSession } = useAuth();
   const [role, setRole] = useState(null);
   const [formData, setFormData] = useState({
     username: '',
@@ -25,6 +25,10 @@ const Register = () => {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    clearSession();
+  }, [clearSession]);
 
   const handleRoleSelect = (selectedRole) => {
     setRole(selectedRole);

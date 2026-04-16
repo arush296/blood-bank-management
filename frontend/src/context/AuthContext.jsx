@@ -1,11 +1,29 @@
-import React, { createContext, useContext, useReducer } from 'react';
+import React, { createContext, useCallback, useContext, useReducer } from 'react';
 
 const AuthContext = createContext();
 
+const getAuthStorage = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return window.sessionStorage;
+};
+
 const getStoredUser = () => {
   try {
-    const storedUser = localStorage.getItem('user');
+    const storage = getAuthStorage();
+    const storedUser = storage?.getItem('user');
     return storedUser ? JSON.parse(storedUser) : null;
+  } catch (error) {
+    return null;
+  }
+};
+
+const getStoredToken = () => {
+  try {
+    const storage = getAuthStorage();
+    return storage?.getItem('token') || null;
   } catch (error) {
     return null;
   }
@@ -13,8 +31,8 @@ const getStoredUser = () => {
 
 const initialState = {
   user: getStoredUser(),
-  token: localStorage.getItem('token') || null,
-  isAuthenticated: !!localStorage.getItem('token'),
+  token: getStoredToken(),
+  isAuthenticated: !!getStoredToken(),
   loading: false,
   error: null
 };
@@ -52,25 +70,36 @@ const authReducer = (state, action) => {
 export const AuthProvider = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
 
-  const login = (user, token) => {
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(user));
+  const clearSession = useCallback(() => {
+    const storage = getAuthStorage();
+    storage?.removeItem('token');
+    storage?.removeItem('user');
+
+    dispatch({ type: 'LOGOUT' });
+  }, []);
+
+  const login = useCallback((user, token) => {
+    const storage = getAuthStorage();
+    if (storage) {
+      storage.setItem('token', token);
+      storage.setItem('user', JSON.stringify(user));
+    }
+
     dispatch({
       type: 'LOGIN_SUCCESS',
       payload: { user, token }
     });
-  };
+  }, []);
 
-  const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    dispatch({ type: 'LOGOUT' });
-  };
+  const logout = useCallback(() => {
+    clearSession();
+  }, [clearSession]);
 
   const value = {
     ...state,
     login,
-    logout
+    logout,
+    clearSession
   };
 
   return (

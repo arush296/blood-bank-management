@@ -1,5 +1,6 @@
 const pool = require('../config/database');
 const { REQUEST_STATUSES, ensureWorkflowSchema } = require('../utils/workflow');
+const { calculateRequestPriority } = require('../utils/requestPriority');
 
 // Get Recipient Profile
 const getRecipientProfile = async (req, res) => {
@@ -46,34 +47,58 @@ const getRecipientProfileByUserId = async (req, res) => {
 // Create Blood Request
 const createBloodRequest = async (req, res) => {
   const client = await pool.connect();
+  let transactionActive = false;
   try {
     await ensureWorkflowSchema();
 
-    const { recipient_id, units_requested, urgency_flag, blood_group_needed, hospital_location } = req.body;
+    const {
+      recipient_id,
+      units_requested,
+      urgency_flag,
+      blood_group_needed,
+      hospital_location,
+      reason
+    } = req.body;
 
     const ownerCheck = await client.query(
       'SELECT recipient_id, blood_group_needed FROM recipient WHERE user_id = $1',
       [req.user.user_id]
     );
     if (ownerCheck.rows.length === 0 || ownerCheck.rows[0].recipient_id !== Number(recipient_id)) {
-      await client.query('ROLLBACK');
       return res.status(403).json({ error: 'You can only create requests for your own profile' });
     }
 
     const registeredBloodGroup = ownerCheck.rows[0].blood_group_needed;
     if (blood_group_needed && blood_group_needed !== registeredBloodGroup) {
-      await client.query('ROLLBACK');
       return res.status(400).json({
         error: `You can only request your registered blood group (${registeredBloodGroup})`
       });
     }
 
+    const stockResult = await client.query(
+      `SELECT COALESCE(SUM(units_available), 0) AS total_units
+       FROM blood_stock
+       WHERE blood_group = $1
+         AND expiry_date >= CURRENT_DATE`,
+      [registeredBloodGroup]
+    );
+
+    const availableUnits = Number(stockResult.rows[0]?.total_units || 0);
+    const priority = calculateRequestPriority({
+      urgencyFlag: urgency_flag,
+      unitsRequested: units_requested,
+      bloodGroupNeeded: registeredBloodGroup,
+      availableUnits,
+      reason
+    });
+
     await client.query('BEGIN');
+    transactionActive = true;
 
     const result = await client.query(
       `INSERT INTO blood_request
-       (recipient_id, units_requested, request_date, urgency_flag, status, blood_group_needed, hospital_location)
-       VALUES ($1, $2, CURRENT_DATE, $3, $4, $5, $6)
+       (recipient_id, units_requested, request_date, urgency_flag, status, blood_group_needed, hospital_location, reason, priority_score, priority_label, priority_breakdown, priority_explanation)
+       VALUES ($1, $2, CURRENT_DATE, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11)
        RETURNING *`,
       [
         recipient_id,
@@ -81,18 +106,32 @@ const createBloodRequest = async (req, res) => {
         urgency_flag,
         REQUEST_STATUSES.PENDING_VERIFICATION,
         registeredBloodGroup,
-        hospital_location
+        hospital_location,
+        reason,
+        priority.priorityScore,
+        priority.priorityLabel,
+        JSON.stringify(priority.priorityBreakdown),
+        priority.priorityExplanation
       ]
     );
 
     await client.query('COMMIT');
+    transactionActive = false;
 
     res.status(201).json({
       message: 'Blood request created successfully',
-      request: result.rows[0]
+      request: result.rows[0],
+      priority: {
+        score: priority.priorityScore,
+        label: priority.priorityLabel,
+        explanation: priority.priorityExplanation,
+        breakdown: priority.priorityBreakdown
+      }
     });
   } catch (error) {
-    await client.query('ROLLBACK');
+    if (transactionActive) {
+      await client.query('ROLLBACK');
+    }
     console.error(error);
     res.status(500).json({ error: 'Failed to create blood request' });
   } finally {
@@ -168,7 +207,11 @@ const searchBloodRequests = async (req, res) => {
       values.push(recipient_id);
     }
 
-    query += ' ORDER BY br.request_date DESC';
+    if (req.user?.role === 'donor') {
+      query += ' ORDER BY COALESCE(br.priority_score, 0) DESC, br.request_date DESC';
+    } else {
+      query += ' ORDER BY br.request_date DESC';
+    }
 
     const result = await pool.query(query, values);
     res.json(result.rows);

@@ -336,9 +336,16 @@ const ApprovalsManagement = () => {
     (r) => !urgencyFilter || r.urgency_flag === urgencyFilter
   );
 
-  const verificationQueue = filteredRequests.filter((r) =>
-    recordView === 'active' ? r.status === 'PENDING_VERIFICATION' : r.status !== 'PENDING_VERIFICATION'
-  );
+  const verificationQueue = filteredRequests
+    .filter((r) =>
+      recordView === 'active' ? r.status === 'PENDING_VERIFICATION' : r.status !== 'PENDING_VERIFICATION'
+    )
+    .sort((a, b) => {
+      const scoreA = Number(a.priority_score || 0);
+      const scoreB = Number(b.priority_score || 0);
+      if (scoreA !== scoreB) return scoreB - scoreA;
+      return new Date(b.request_date) - new Date(a.request_date);
+    });
 
   const matchQueue = filteredRequests.filter((r) => {
     if (recordView === 'active') {
@@ -417,7 +424,7 @@ const ApprovalsManagement = () => {
         <>
           <h3>{recordView === 'active' ? 'Recipient Verification Queue' : 'Verification History'}</h3>
           {verificationQueue.length > 0 ? (
-        <div className="approvals-table">
+        <div className="approvals-table approvals-priority-table">
           <table>
             <thead>
               <tr>
@@ -427,8 +434,11 @@ const ApprovalsManagement = () => {
                 <th>Units</th>
                 <th>Hospital</th>
                 <th>Urgency</th>
+                <th>Reason</th>
+                <th>Priority</th>
+                <th>AI Rationale</th>
                 <th>Status</th>
-                <th>Action</th>
+                <th className="action-col">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -440,8 +450,19 @@ const ApprovalsManagement = () => {
                   <td>{request.units_requested}</td>
                   <td>{request.hospital_location || 'N/A'}</td>
                   <td><span className={`urgency-badge urgency-${request.urgency_flag.toLowerCase()}`}>{request.urgency_flag}</span></td>
-                  <td><span className="status-badge">{request.status}</span></td>
+                  <td className="reason-cell" title={request.reason || 'No reason provided'}>
+                    {request.reason || 'No reason'}
+                  </td>
                   <td>
+                    <span className="status-badge">
+                      {request.priority_label || 'Standard'} ({request.priority_score || 0})
+                    </span>
+                  </td>
+                  <td className="rationale-cell" title={request.priority_explanation || 'No rationale available'}>
+                    {request.priority_explanation || 'No rationale'}
+                  </td>
+                  <td><span className="status-badge">{request.status}</span></td>
+                  <td className="action-col">
                     {recordView === 'active' ? (
                       <div className="action-buttons">
                         <button onClick={() => handleVerification(request.blood_request_id, 'OPEN_FOR_DONORS')} className="btn-approve">Approve</button>

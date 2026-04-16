@@ -13,7 +13,12 @@ const ensureWorkflowSchema = async () => {
   await pool.query(`
     ALTER TABLE blood_request
     ADD COLUMN IF NOT EXISTS blood_group_needed VARCHAR(5),
-    ADD COLUMN IF NOT EXISTS hospital_location VARCHAR(120)
+    ADD COLUMN IF NOT EXISTS hospital_location VARCHAR(120),
+    ADD COLUMN IF NOT EXISTS reason TEXT,
+    ADD COLUMN IF NOT EXISTS priority_score INT DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS priority_label VARCHAR(20) DEFAULT 'Standard',
+    ADD COLUMN IF NOT EXISTS priority_breakdown JSONB DEFAULT '{}'::jsonb,
+    ADD COLUMN IF NOT EXISTS priority_explanation TEXT
   `);
 
   await pool.query(`
@@ -86,6 +91,27 @@ const ensureWorkflowSchema = async () => {
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UNIQUE (request_id, donor_id)
     )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS donor_notification (
+      notification_id SERIAL PRIMARY KEY,
+      donor_id INT NOT NULL REFERENCES donor(donor_id) ON DELETE CASCADE,
+      request_id INT NOT NULL REFERENCES blood_request(request_id) ON DELETE CASCADE,
+      severity VARCHAR(20) NOT NULL DEFAULT 'info',
+      title VARCHAR(140) NOT NULL,
+      message TEXT NOT NULL,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      is_read BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      read_at TIMESTAMP,
+      UNIQUE (donor_id, request_id)
+    )
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_donor_notification_donor_read
+    ON donor_notification(donor_id, is_read, created_at DESC)
   `);
 };
 

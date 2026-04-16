@@ -1,6 +1,66 @@
 const pool = require('../config/database');
 const { REQUEST_STATUSES, ensureWorkflowSchema } = require('../utils/workflow');
 
+const URGENT_URGENCY_LEVELS = new Set(['HIGH', 'CRITICAL', 'VERY_URGENT', 'VERY URGENT']);
+
+const shouldTriggerUrgentNotification = (requestRow) => {
+  if (!requestRow) {
+    return false;
+  }
+
+  const urgency = String(requestRow.urgency_flag || '').toUpperCase().trim();
+  const score = Number(requestRow.priority_score || 0);
+
+  return URGENT_URGENCY_LEVELS.has(urgency) || score >= 70;
+};
+
+const createDonorNotificationsForRequest = async (client, requestRow) => {
+  const bloodGroupNeeded = requestRow.blood_group_needed;
+  if (!bloodGroupNeeded) {
+    return 0;
+  }
+
+  const severity = 'urgent';
+  const title = 'Urgent Request Open For Donors';
+  const message = `Request #${requestRow.request_id} for ${bloodGroupNeeded} is now approved and open. Urgency: ${requestRow.urgency_flag}.`;
+
+  const result = await client.query(
+    `INSERT INTO donor_notification (donor_id, request_id, severity, title, message, metadata)
+     SELECT
+       d.donor_id,
+       $1::int,
+       $2::varchar(20),
+       $3::varchar(140),
+       $4::text,
+       jsonb_build_object(
+         'request_id', $1::int,
+         'blood_group_needed', $5::varchar(5),
+         'urgency_flag', $6::varchar(20),
+         'units_requested', $7::int,
+         'hospital_location', COALESCE($8::text, ''),
+         'priority_label', COALESCE($9::text, ''),
+         'priority_score', COALESCE($10::int, 0)
+       )
+     FROM donor d
+     WHERE d.blood_group = $5::varchar(5)
+     ON CONFLICT (donor_id, request_id) DO NOTHING`,
+    [
+      requestRow.request_id,
+      severity,
+      title,
+      message,
+      requestRow.blood_group_needed,
+      requestRow.urgency_flag,
+      requestRow.units_requested,
+      requestRow.hospital_location,
+      requestRow.priority_label,
+      requestRow.priority_score
+    ]
+  );
+
+  return result.rowCount || 0;
+};
+
 // Create Approval
 const createApproval = async (req, res) => {
   try {
@@ -14,6 +74,7 @@ const createApproval = async (req, res) => {
 
 // Update Approval Status
 const updateApprovalStatus = async (req, res) => {
+  const client = await pool.connect();
   try {
     await ensureWorkflowSchema();
 
@@ -27,27 +88,53 @@ const updateApprovalStatus = async (req, res) => {
       return res.status(400).json({ error: 'Status must be OPEN_FOR_DONORS or REJECTED' });
     }
 
-    const existing = await pool.query('SELECT request_id, status FROM blood_request WHERE request_id = $1', [id]);
+    await client.query('BEGIN');
+
+    const existing = await client.query(
+      `SELECT request_id, status, urgency_flag, units_requested, blood_group_needed,
+              hospital_location, priority_label, priority_score
+       FROM blood_request
+       WHERE request_id = $1
+       FOR UPDATE`,
+      [id]
+    );
     if (existing.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Request not found' });
     }
 
     if (existing.rows[0].status !== REQUEST_STATUSES.PENDING_VERIFICATION) {
+      await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Only PENDING_VERIFICATION requests can be moderated here' });
     }
 
-    const result = await pool.query(
+    const result = await client.query(
       'UPDATE blood_request SET status = $1 WHERE request_id = $2 RETURNING *',
       [finalStatus, id]
     );
 
+    let notificationsCreated = 0;
+    if (finalStatus === REQUEST_STATUSES.OPEN_FOR_DONORS && shouldTriggerUrgentNotification(result.rows[0])) {
+      notificationsCreated = await createDonorNotificationsForRequest(client, result.rows[0]);
+    }
+
+    await client.query('COMMIT');
+
     res.json({
       message: 'Request verification updated successfully',
-      request: result.rows[0]
+      request: result.rows[0],
+      notifications_created: notificationsCreated
     });
   } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      console.error('Rollback failed:', rollbackError);
+    }
     console.error(error);
     res.status(500).json({ error: 'Failed to update approval status' });
+  } finally {
+    client.release();
   }
 };
 
@@ -64,6 +151,10 @@ const getApprovalHistory = async (req, res) => {
          br.urgency_flag,
          br.units_requested,
          br.request_date,
+         br.reason,
+         br.priority_score,
+         br.priority_label,
+         br.priority_explanation,
          COALESCE(br.blood_group_needed, r.blood_group_needed) AS blood_group_needed,
          COALESCE(br.hospital_location, r.hospital) AS hospital_location,
          r.name AS recipient_name,

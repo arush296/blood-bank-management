@@ -125,6 +125,7 @@ const RecipientDashboard = () => {
                       <th>Request ID</th>
                       <th>Blood Group</th>
                       <th>Units Requested</th>
+                      <th>Priority</th>
                       <th>Status</th>
                       <th>Urgency</th>
                       <th>Request Date</th>
@@ -137,6 +138,11 @@ const RecipientDashboard = () => {
                         <td>{req.request_id}</td>
                         <td>{req.blood_group_needed}</td>
                         <td>{req.units_requested}</td>
+                        <td>
+                          <span className="status-badge">
+                            {req.priority_label || 'Standard'} ({req.priority_score || 0})
+                          </span>
+                        </td>
                         <td><span className="status-badge">{req.status}</span></td>
                         <td><span className={`urgency-badge urgency-${req.urgency_flag.toLowerCase()}`}>{req.urgency_flag}</span></td>
                         <td>{new Date(req.request_date).toLocaleDateString()}</td>
@@ -239,7 +245,8 @@ const BloodRequestForm = ({ recipientId, defaultBloodGroup, defaultHospital, onR
     units_requested: '',
     urgency_flag: 'Medium',
     blood_group_needed: defaultBloodGroup || '',
-    hospital_location: defaultHospital || ''
+    hospital_location: defaultHospital || '',
+    reason: ''
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -276,7 +283,8 @@ const BloodRequestForm = ({ recipientId, defaultBloodGroup, defaultHospital, onR
         units_requested: '',
         urgency_flag: 'Medium',
         blood_group_needed: defaultBloodGroup || '',
-        hospital_location: defaultHospital || ''
+        hospital_location: defaultHospital || '',
+        reason: ''
       });
       setTimeout(() => {
         onRequestCreated();
@@ -348,6 +356,21 @@ const BloodRequestForm = ({ recipientId, defaultBloodGroup, defaultHospital, onR
             <option value="High">High</option>
             <option value="Critical">Critical</option>
           </select>
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="reason">Reason for Request</label>
+          <textarea
+            id="reason"
+            name="reason"
+            value={formData.reason}
+            onChange={handleChange}
+            required
+            minLength={10}
+            maxLength={500}
+            rows={4}
+            placeholder="Explain the medical need (e.g. emergency surgery tomorrow, ICU support, accident case)."
+          />
         </div>
 
         <button type="submit" disabled={loading} className="submit-btn">

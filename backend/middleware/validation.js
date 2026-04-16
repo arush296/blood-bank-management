@@ -24,6 +24,10 @@ const validateRecipientRegistration = [
 const validateBloodRequest = [
   body('units_requested').isInt({ min: 1 }).withMessage('Units requested must be at least 1'),
   body('urgency_flag').isIn(['Low', 'Medium', 'High', 'Critical']).withMessage('Invalid urgency flag'),
+  body('reason')
+    .trim()
+    .isLength({ min: 10, max: 500 })
+    .withMessage('Reason must be between 10 and 500 characters'),
 ];
 
 const handleValidationErrors = (req, res, next) => {

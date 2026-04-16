@@ -9,6 +9,8 @@ const DonorDashboard = () => {
   const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   const [history, setHistory] = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('profile');
@@ -29,10 +31,40 @@ const DonorDashboard = () => {
 
       const historyResponse = await donorAPI.getDonationHistoryByUserId(user.user_id);
       setHistory(historyResponse.data);
+
+      const notificationResponse = await donorAPI.getMyNotifications();
+      setNotifications(notificationResponse.data.notifications || []);
+      setUnreadCount(notificationResponse.data.unread_count || 0);
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Failed to fetch profile');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleMarkNotificationRead = async (notificationId) => {
+    try {
+      await donorAPI.markNotificationRead(notificationId);
+      setNotifications((current) =>
+        current.map((notification) =>
+          notification.notification_id === notificationId
+            ? { ...notification, is_read: true, read_at: new Date().toISOString() }
+            : notification
+        )
+      );
+      setUnreadCount((current) => Math.max(current - 1, 0));
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to mark notification as read');
+    }
+  };
+
+  const handleMarkAllNotificationsRead = async () => {
+    try {
+      await donorAPI.markAllNotificationsRead();
+      setNotifications((current) => current.map((notification) => ({ ...notification, is_read: true, read_at: new Date().toISOString() })));
+      setUnreadCount(0);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to mark notifications as read');
     }
   };
 
@@ -55,6 +87,35 @@ const DonorDashboard = () => {
 
       <div className="dashboard-content">
         {error && <div className="error-message">{error}</div>}
+
+        {unreadCount > 0 && (
+          <div className="urgent-notification-panel">
+            <div className="urgent-notification-header">
+              <h3>Urgent Alerts for You</h3>
+              <button className="btn-approve" onClick={handleMarkAllNotificationsRead}>Mark All Read</button>
+            </div>
+            <p>You have {unreadCount} urgent approved request{unreadCount > 1 ? 's' : ''} waiting for donor action.</p>
+
+            <div className="urgent-notification-list">
+              {notifications
+                .filter((notification) => !notification.is_read)
+                .slice(0, 4)
+                .map((notification) => (
+                  <div key={notification.notification_id} className="urgent-notification-item">
+                    <div>
+                      <strong>{notification.title}</strong>
+                      <p>{notification.message}</p>
+                      <small>{new Date(notification.created_at).toLocaleString()}</small>
+                    </div>
+                    <div className="urgent-notification-actions">
+                      <button className="btn-approve" onClick={() => setActiveTab('search')}>View Requests</button>
+                      <button className="btn-reject" onClick={() => handleMarkNotificationRead(notification.notification_id)}>Dismiss</button>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
 
         <div className="tabs">
           <button
@@ -229,8 +290,10 @@ const SearchRequests = ({ bloodGroup }) => {
                 <th>Request ID</th>
                 <th>Blood Group</th>
                 <th>Units Needed</th>
+                <th>Priority</th>
                 <th>Status</th>
                 <th>Urgency</th>
+                <th>Reason</th>
                 <th>Request Date</th>
                 <th>Apply</th>
               </tr>
@@ -241,8 +304,14 @@ const SearchRequests = ({ bloodGroup }) => {
                   <td>{req.request_id}</td>
                   <td>{req.blood_group_needed}</td>
                   <td>{req.units_requested}</td>
+                  <td>
+                    <span className="status-badge">
+                      {req.priority_label || 'Standard'} ({req.priority_score || 0})
+                    </span>
+                  </td>
                   <td><span className="status-badge">{req.status}</span></td>
                   <td><span className={`urgency-badge urgency-${req.urgency_flag.toLowerCase()}`}>{req.urgency_flag}</span></td>
+                  <td className="reason-cell" title={req.reason || 'No reason provided'}>{req.reason || 'No reason'}</td>
                   <td>{new Date(req.request_date).toLocaleDateString()}</td>
                   <td>
                     {req.status === 'OPEN_FOR_DONORS' ? (

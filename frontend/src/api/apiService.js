@@ -9,9 +9,23 @@ const api = axios.create({
   }
 });
 
+const getAuthStorage = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return window.sessionStorage;
+};
+
+const getAuthToken = () => {
+  const storage = getAuthStorage();
+
+  return storage?.getItem('token');
+};
+
 // Add token to requests
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
+  const token = getAuthToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -34,7 +48,10 @@ export const donorAPI = {
   searchDonors: (params) => api.get('/donors/search', { params }),
   recordDonation: (donorId, data) => api.post(`/donors/${donorId}/donation`, data),
   getDonationHistory: (id) => api.get(`/donors/${id}/history`),
-  getDonationHistoryByUserId: (userId) => api.get(`/donors/history/user/${userId}`)
+  getDonationHistoryByUserId: (userId) => api.get(`/donors/history/user/${userId}`),
+  getMyNotifications: () => api.get('/donors/notifications/my'),
+  markNotificationRead: (notificationId) => api.put(`/donors/notifications/${notificationId}/read`),
+  markAllNotificationsRead: () => api.put('/donors/notifications/read-all')
 };
 
 // Recipient API

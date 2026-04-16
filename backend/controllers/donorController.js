@@ -1,6 +1,15 @@
 const pool = require('../config/database');
 const { REQUEST_STATUSES, ensureWorkflowSchema } = require('../utils/workflow');
 
+const resolveDonorIdFromUser = async (userId) => {
+  const donorResult = await pool.query('SELECT donor_id FROM donor WHERE user_id = $1', [userId]);
+  if (donorResult.rows.length === 0) {
+    return null;
+  }
+
+  return donorResult.rows[0].donor_id;
+};
+
 // Register Donor (handled in auth controller)
 // Get Donor Profile
 const getDonorProfile = async (req, res) => {
@@ -239,6 +248,108 @@ const getDonationHistoryByUserId = async (req, res) => {
   }
 };
 
+const getMyNotifications = async (req, res) => {
+  try {
+    await ensureWorkflowSchema();
+
+    const userId = req.user?.user_id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Invalid user session' });
+    }
+
+    const donorId = await resolveDonorIdFromUser(userId);
+    if (!donorId) {
+      return res.status(404).json({ error: 'Donor profile not found for this user' });
+    }
+
+    const result = await pool.query(
+      `SELECT
+         notification_id,
+         request_id,
+         severity,
+         title,
+         message,
+         metadata,
+         is_read,
+         created_at,
+         read_at
+       FROM donor_notification
+       WHERE donor_id = $1
+       ORDER BY is_read ASC, created_at DESC
+       LIMIT 30`,
+      [donorId]
+    );
+
+    const unreadCount = result.rows.filter((row) => !row.is_read).length;
+    res.json({ notifications: result.rows, unread_count: unreadCount });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to fetch notifications' });
+  }
+};
+
+const markNotificationRead = async (req, res) => {
+  try {
+    await ensureWorkflowSchema();
+
+    const userId = req.user?.user_id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Invalid user session' });
+    }
+
+    const donorId = await resolveDonorIdFromUser(userId);
+    if (!donorId) {
+      return res.status(404).json({ error: 'Donor profile not found for this user' });
+    }
+
+    const { notificationId } = req.params;
+    const result = await pool.query(
+      `UPDATE donor_notification
+       SET is_read = TRUE, read_at = CURRENT_TIMESTAMP
+       WHERE notification_id = $1 AND donor_id = $2
+       RETURNING notification_id, is_read, read_at`,
+      [notificationId, donorId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Notification not found' });
+    }
+
+    res.json({ message: 'Notification marked as read', notification: result.rows[0] });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to update notification status' });
+  }
+};
+
+const markAllNotificationsRead = async (req, res) => {
+  try {
+    await ensureWorkflowSchema();
+
+    const userId = req.user?.user_id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Invalid user session' });
+    }
+
+    const donorId = await resolveDonorIdFromUser(userId);
+    if (!donorId) {
+      return res.status(404).json({ error: 'Donor profile not found for this user' });
+    }
+
+    const result = await pool.query(
+      `UPDATE donor_notification
+       SET is_read = TRUE, read_at = CURRENT_TIMESTAMP
+       WHERE donor_id = $1 AND is_read = FALSE`,
+      [donorId]
+    );
+
+    res.json({ message: 'Notifications marked as read', updated_count: result.rowCount || 0 });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to mark notifications as read' });
+  }
+};
+
 module.exports = {
   getDonorProfile,
   getDonorProfileByUserId,
@@ -246,5 +357,8 @@ module.exports = {
   searchDonors,
   recordDonation,
   getDonationHistory,
-  getDonationHistoryByUserId
+  getDonationHistoryByUserId,
+  getMyNotifications,
+  markNotificationRead,
+  markAllNotificationsRead
 };
